@@ -5,7 +5,8 @@ from __future__ import print_function
 import roslib; roslib.load_manifest('teleop_twist_keyboard')
 import rospy
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, Point
+
 
 import sys, select, termios, tty
 
@@ -31,6 +32,11 @@ anything else : stop
 q/z : increase/decrease max speeds by 10%
 w/x : increase/decrease only linear speed by 10%
 e/c : increase/decrease only angular speed by 10%
+
+a/s : change the lift
+d/f : change the yaw
+g/h : change the pitch
+r: to reset the head 
 
 CTRL-C to quit
 """
@@ -65,6 +71,15 @@ speedBindings={
 		'c':(1,.9),
 	      }
 
+headBindings={
+		'a': (1,0,0),
+		's': (-1,0,0),
+		'd': (0,1,0),
+		'f': (0,-1,0),
+		'g': (0,0,1),
+		'h': (0,0,-1),
+	      }
+
 def getKey():
 	tty.setraw(sys.stdin.fileno())
 	select.select([sys.stdin], [], [], 0)
@@ -79,7 +94,9 @@ def vels(speed,turn):
 if __name__=="__main__":
     	settings = termios.tcgetattr(sys.stdin)
 	
-	pub = rospy.Publisher('cmd_vel', Twist, queue_size = 1)
+	pub1 = rospy.Publisher('cmd_vel', Twist, queue_size = 1)
+	pub2 = rospy.Publisher('head_pos', Point, queue_size = 1)
+
 	rospy.init_node('teleop_twist_keyboard')
 
 	speed = rospy.get_param("~speed", 0.5)
@@ -89,6 +106,11 @@ if __name__=="__main__":
 	z = 0
 	th = 0
 	status = 0
+	
+	# head
+	lift = 0
+	yaw = 50
+	pitch = 100
 
 	try:
 		print(msg)
@@ -108,6 +130,25 @@ if __name__=="__main__":
 				if (status == 14):
 					print(msg)
 				status = (status + 1) % 15
+			elif key in headBindings.keys():
+				lift += headBindings[key][0]
+				if lift < 0: 
+					lift = 0
+				if lift > 100:
+					lift = 100
+				yaw += headBindings[key][1]
+				if yaw < 0: 
+					yaw = 0
+				if yaw > 100:
+					yaw = 100
+				pitch += headBindings[key][2]
+				if pitch < 0: 
+					pitch = 0
+				if pitch > 100:
+					pitch = 100
+				x = 0
+				y = 0
+				th = 0
 			else:
 				x = 0
 				y = 0
@@ -115,11 +156,22 @@ if __name__=="__main__":
 				th = 0
 				if (key == '\x03'):
 					break
+				elif key == 'r':
+					lift = 0
+					yaw = 50
+					pitch = 100
 
 			twist = Twist()
 			twist.linear.x = x*speed; twist.linear.y = y*speed; twist.linear.z = z*speed;
 			twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = th*turn
-			pub.publish(twist)
+			pub1.publish(twist)
+
+            # head
+			point = Point()
+			point.x = lift
+			point.y = yaw
+			point.z = pitch
+			pub2.publish(point)
 
 	except Exception as e:
 		print(e)
@@ -128,7 +180,7 @@ if __name__=="__main__":
 		twist = Twist()
 		twist.linear.x = 0; twist.linear.y = 0; twist.linear.z = 0
 		twist.angular.x = 0; twist.angular.y = 0; twist.angular.z = 0
-		pub.publish(twist)
+		pub1.publish(twist)
 
     		termios.tcsetattr(sys.stdin, termios.TCSADRAIN, settings)
 
